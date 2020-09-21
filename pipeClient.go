@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"strings"
@@ -42,96 +43,156 @@ func newPipeClient(pageName string, sessionID string) (*pipeClient, error) {
 }
 
 func (pc *pipeClient) start() error {
-	//go pc.commandLoop()
+	go pc.commandLoop()
 	go pc.eventLoop()
 
 	return nil
 }
 
-// func (pc *pipeClient) commandLoop() {
-// 	log.Println("Starting command loop...")
+func (pc *pipeClient) commandLoop() {
+	log.Println("Starting command loop - ", pc.commandPipeName)
 
-// 	defer os.Remove(pc.commandPipeName)
+	ln, err := npipe.Listen(`\\.\pipe\` + pc.commandPipeName)
+	if err != nil {
+		// handle error
+	}
 
-// 	for {
-// 		// read next command from pipeline
-// 		cmdText := pc.read()
+	defer ln.Close()
 
-// 		// parse command
-// 		command, err := page.ParseCommand(cmdText)
-// 		if err != nil {
-// 			log.Fatalln(err)
-// 		}
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Println("Connection error:", err)
+			continue
+		}
 
-// 		log.Printf("Send command: %+v", command)
+		log.Println("Connected to command pipe...")
 
-// 		if command.Name == page.Quit {
-// 			pc.close()
-// 			return
-// 		}
+		go func(conn net.Conn) {
 
-// 		rawResult := pc.hostClient.call(page.PageCommandFromHostAction, &page.PageCommandRequestPayload{
-// 			PageName:  pc.pageName,
-// 			SessionID: pc.sessionID,
-// 			Command:   *command,
-// 		})
+			for {
+				// read next command from pipeline
+				cmdText := pc.read(conn)
 
-// 		// parse response
-// 		payload := &page.PageCommandResponsePayload{}
-// 		err = json.Unmarshal(*rawResult, payload)
+				if cmdText == "" {
+					log.Println("Disconnected from command pipe")
+					return
+				}
 
-// 		if err != nil {
-// 			log.Fatalln("Error parsing response from PageCommandFromHostAction:", err)
-// 		}
+				// parse command
+				// command, err := page.ParseCommand(cmdText)
+				// if err != nil {
+				// 	log.Fatalln(err)
+				// }
 
-// 		// save command results
-// 		result := payload.Result
-// 		if payload.Error != "" {
-// 			result = fmt.Sprintf("error %s", payload.Error)
-// 		}
+				log.Printf("Send command: %+v", cmdText)
 
-// 		pc.writeResult(result)
-// 	}
-// }
+				// if command.Name == page.Quit {
+				// 	pc.close()
+				// 	return
+				// }
 
-// func (pc *pipeClient) read() string {
-// 	var bytesRead int
-// 	var err error
-// 	buf := make([]byte, readsize)
-// 	for {
-// 		var result []byte
-// 		input, err := openFifo(pc.commandPipeName, os.O_RDONLY)
-// 		if err != nil {
-// 			break
-// 		}
-// 		for err == nil {
-// 			bytesRead, err = input.Read(buf)
-// 			result = append(result, buf[0:bytesRead]...)
+				// rawResult := pc.hostClient.call(page.PageCommandFromHostAction, &page.PageCommandRequestPayload{
+				// 	PageName:  pc.pageName,
+				// 	SessionID: pc.sessionID,
+				// 	Command:   *command,
+				// })
 
-// 			if err == io.EOF {
-// 				break
-// 			}
+				// // parse response
+				// payload := &page.PageCommandResponsePayload{}
+				// err = json.Unmarshal(*rawResult, payload)
 
-// 			//fmt.Printf("read: %d\n", bytesRead)
-// 		}
-// 		input.Close()
-// 		return string(result)
-// 	}
-// 	log.Fatal(err)
-// 	return ""
-// }
+				// if err != nil {
+				// 	log.Fatalln("Error parsing response from PageCommandFromHostAction:", err)
+				// }
 
-// func (pc *pipeClient) writeResult(result string) {
-// 	log.Println("Waiting for result to consume...")
-// 	output, err := openFifo(pc.commandPipeName, os.O_WRONLY)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	log.Println("Write result:", result)
+				// // save command results
+				// result := payload.Result
+				// if payload.Error != "" {
+				// 	result = fmt.Sprintf("error %s", payload.Error)
+				// }
 
-// 	output.WriteString(fmt.Sprintf("%s\n", result))
-// 	output.Close()
-// }
+				pc.writeResult(conn, fmt.Sprintf("%s abc", strings.TrimSpace(strings.Split(cmdText, "\n")[0])))
+			}
+
+		}(conn)
+	}
+}
+
+func (pc *pipeClient) read(conn net.Conn) string {
+
+	// r := bufio.NewReader(conn)
+
+	// line, err := r.ReadString('\n')
+
+	// if err != nil {
+	// 	log.Println(err)
+	// 	return ""
+	// }
+
+	// return strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
+
+	// var result strings.Builder
+
+	// for {
+	// 	line, err := r.ReadString('\n')
+
+	// 	if err != nil {
+	// 		log.Println(err)
+	// 		break
+	// 	}
+
+	// 	log.Println(line)
+	// 	result.WriteString(strings.TrimSuffix(line, "\n"))
+	// }
+
+	// return result.String()
+
+	var bytesRead int
+	var err error
+	buf := make([]byte, readsize)
+
+	r := bufio.NewReader(conn)
+
+	//log.Println("Before read")
+
+	for {
+		var result []byte
+
+		for {
+
+			bytesRead, err = r.Read(buf)
+
+			if err == io.EOF {
+				//log.Println("EOF")
+				return ""
+			}
+
+			result = append(result, buf[0:bytesRead]...)
+
+			//log.Println(string(result))
+
+			//log.Printf("read: %d\n", bytesRead)
+
+			if bytesRead < readsize {
+				//log.Println("less bytes read")
+				break
+			}
+		}
+		return strings.TrimSuffix(strings.TrimSuffix(string(result), "\n"), "\r")
+	}
+}
+
+func (pc *pipeClient) writeResult(conn net.Conn, result string) {
+	log.Println("Waiting for result to consume...")
+
+	w := bufio.NewWriter(conn)
+
+	log.Println("Write result:", result)
+
+	w.WriteString(fmt.Sprintf("%s\n", result))
+	w.Flush()
+}
 
 func (pc *pipeClient) emitEvent(evt string) {
 	select {
@@ -170,7 +231,7 @@ func (pc *pipeClient) eventLoop() {
 
 					w := bufio.NewWriter(conn)
 
-					log.Println("before event written:", evt)
+					//log.Println("before event written:", evt)
 					_, err = w.WriteString(evt + "\n")
 					if err != nil {
 						if strings.Contains(err.Error(), "Pipe IO timed out waiting") {
