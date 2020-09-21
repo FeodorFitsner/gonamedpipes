@@ -121,33 +121,6 @@ func (pc *pipeClient) commandLoop() {
 
 func (pc *pipeClient) read(conn net.Conn) string {
 
-	// r := bufio.NewReader(conn)
-
-	// line, err := r.ReadString('\n')
-
-	// if err != nil {
-	// 	log.Println(err)
-	// 	return ""
-	// }
-
-	// return strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
-
-	// var result strings.Builder
-
-	// for {
-	// 	line, err := r.ReadString('\n')
-
-	// 	if err != nil {
-	// 		log.Println(err)
-	// 		break
-	// 	}
-
-	// 	log.Println(line)
-	// 	result.WriteString(strings.TrimSuffix(line, "\n"))
-	// }
-
-	// return result.String()
-
 	var bytesRead int
 	var err error
 	buf := make([]byte, readsize)
@@ -225,6 +198,8 @@ func (pc *pipeClient) eventLoop() {
 
 		go func(conn net.Conn) {
 
+			defer log.Println("Disconnected from event pipe")
+
 			for {
 				select {
 				case evt, more := <-pc.events:
@@ -235,10 +210,9 @@ func (pc *pipeClient) eventLoop() {
 					_, err = w.WriteString(evt + "\n")
 					if err != nil {
 						if strings.Contains(err.Error(), "Pipe IO timed out waiting") {
-							//log.Println("aaa")
 							continue
 						}
-						log.Println("write error:", err)
+						//log.Println("write error:", err)
 						return
 					}
 
@@ -246,10 +220,9 @@ func (pc *pipeClient) eventLoop() {
 					err = w.Flush()
 					if err != nil {
 						if strings.Contains(err.Error(), "Pipe IO timed out waiting") {
-							//log.Println("bbb")
 							continue
 						}
-						log.Println("flush error:", err)
+						//log.Println("flush error:", err)
 						return
 					}
 
@@ -262,8 +235,6 @@ func (pc *pipeClient) eventLoop() {
 			}
 
 		}(conn)
-
-		//log.Println("Disconnected")
 	}
 }
 
