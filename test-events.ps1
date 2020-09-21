@@ -18,7 +18,7 @@ try {
         }
         Write-Host $line
 
-        Start-Sleep -s 5
+        Start-Sleep -s 2
     }
 
 } finally {

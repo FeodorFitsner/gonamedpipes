@@ -16,40 +16,34 @@ const (
 	readsize = 64 << 10
 )
 
-type pipeClient struct {
+type pipeImpl struct {
+	conn            net.Conn
 	id              string
-	pageName        string
-	sessionID       string
 	commandPipeName string
 	eventPipeName   string
+	commands        chan string
 	events          chan string
 	done            chan bool
 }
 
-func newPipeClient(pageName string, sessionID string) (*pipeClient, error) {
-	id := "111"
+func newPipeImpl(id string) (*pipeImpl, error) {
 	pipeName := fmt.Sprintf("pglet_pipe_%s", id)
 
-	pc := &pipeClient{
+	pc := &pipeImpl{
 		id:              id,
-		pageName:        pageName,
-		sessionID:       sessionID,
 		commandPipeName: pipeName,
 		eventPipeName:   pipeName + ".events",
+		commands:        make(chan string),
 		events:          make(chan string),
 	}
+
+	go pc.commandLoop()
+	go pc.eventLoop()
 
 	return pc, nil
 }
 
-func (pc *pipeClient) start() error {
-	go pc.commandLoop()
-	go pc.eventLoop()
-
-	return nil
-}
-
-func (pc *pipeClient) commandLoop() {
+func (pc *pipeImpl) commandLoop() {
 	log.Println("Starting command loop - ", pc.commandPipeName)
 
 	ln, err := npipe.Listen(`\\.\pipe\` + pc.commandPipeName)
@@ -60,7 +54,7 @@ func (pc *pipeClient) commandLoop() {
 	defer ln.Close()
 
 	for {
-		conn, err := ln.Accept()
+		pc.conn, err = ln.Accept()
 		if err != nil {
 			log.Println("Connection error:", err)
 			continue
@@ -68,66 +62,33 @@ func (pc *pipeClient) commandLoop() {
 
 		log.Println("Connected to command pipe...")
 
-		go func(conn net.Conn) {
+		go func() {
 
 			for {
 				// read next command from pipeline
-				cmdText := pc.read(conn)
+				cmdText := pc.read()
 
 				if cmdText == "" {
 					log.Println("Disconnected from command pipe")
 					return
 				}
 
-				// parse command
-				// command, err := page.ParseCommand(cmdText)
-				// if err != nil {
-				// 	log.Fatalln(err)
-				// }
-
-				log.Printf("Send command: %+v", cmdText)
-
-				// if command.Name == page.Quit {
-				// 	pc.close()
-				// 	return
-				// }
-
-				// rawResult := pc.hostClient.call(page.PageCommandFromHostAction, &page.PageCommandRequestPayload{
-				// 	PageName:  pc.pageName,
-				// 	SessionID: pc.sessionID,
-				// 	Command:   *command,
-				// })
-
-				// // parse response
-				// payload := &page.PageCommandResponsePayload{}
-				// err = json.Unmarshal(*rawResult, payload)
-
-				// if err != nil {
-				// 	log.Fatalln("Error parsing response from PageCommandFromHostAction:", err)
-				// }
-
-				// // save command results
-				// result := payload.Result
-				// if payload.Error != "" {
-				// 	result = fmt.Sprintf("error %s", payload.Error)
-				// }
-
-				pc.writeResult(conn, fmt.Sprintf("%s abc", strings.TrimSpace(strings.Split(cmdText, "\n")[0])))
+				pc.commands <- cmdText
 			}
 
-		}(conn)
+		}()
 	}
 }
 
-func (pc *pipeClient) read(conn net.Conn) string {
+func (pc *pipeImpl) read() string {
 
 	var bytesRead int
 	var err error
 	buf := make([]byte, readsize)
 
-	r := bufio.NewReader(conn)
+	r := bufio.NewReader(pc.conn)
 
-	//log.Println("Before read")
+	log.Println("Before read")
 
 	for {
 		var result []byte
@@ -156,10 +117,10 @@ func (pc *pipeClient) read(conn net.Conn) string {
 	}
 }
 
-func (pc *pipeClient) writeResult(conn net.Conn, result string) {
+func (pc *pipeImpl) writeResult(result string) {
 	log.Println("Waiting for result to consume...")
 
-	w := bufio.NewWriter(conn)
+	w := bufio.NewWriter(pc.conn)
 
 	log.Println("Write result:", result)
 
@@ -167,7 +128,7 @@ func (pc *pipeClient) writeResult(conn net.Conn, result string) {
 	w.Flush()
 }
 
-func (pc *pipeClient) emitEvent(evt string) {
+func (pc *pipeImpl) emitEvent(evt string) {
 	select {
 	case pc.events <- evt:
 		// Event sent to queue
@@ -176,7 +137,7 @@ func (pc *pipeClient) emitEvent(evt string) {
 	}
 }
 
-func (pc *pipeClient) eventLoop() {
+func (pc *pipeImpl) eventLoop() {
 
 	log.Println("Starting event loop - ", pc.eventPipeName)
 
@@ -238,7 +199,7 @@ func (pc *pipeClient) eventLoop() {
 	}
 }
 
-func (pc *pipeClient) close() {
+func (pc *pipeImpl) close() {
 	log.Println("Closing pipe client...")
 
 	//pc.hostClient.unregisterPipeClient(pc)

@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/pglet/npipe"
@@ -12,8 +14,17 @@ import (
 func main() {
 	fmt.Println("Hello, world!")
 	//exampleListen()
-	pc, _ := newPipeClient("page1", "session1")
-	pc.start()
+	pc, _ := newPipeImpl("111")
+
+	go func() {
+		for {
+			// command echo loop
+			cmd := <-pc.commands
+			log.Println(cmd)
+
+			pc.writeResult(fmt.Sprintf("%s - OK", strings.TrimSpace(strings.Split(cmd, "\n")[0])))
+		}
+	}()
 
 	for i := 0; i < 10000; i++ {
 		pc.emitEvent(fmt.Sprintf("event %d", i))
