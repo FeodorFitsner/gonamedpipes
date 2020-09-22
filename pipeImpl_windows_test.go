@@ -14,7 +14,9 @@ import (
 )
 
 func TestCommandLoop(t *testing.T) {
-	pc, _ := newPipeImpl("111")
+	pipeName := "111"
+	pc, _ := newPipeImpl(pipeName)
+	defer pc.close()
 
 	go func() {
 		for {
@@ -26,15 +28,35 @@ func TestCommandLoop(t *testing.T) {
 		}
 	}()
 
-	out, err := runPowerShell("test-commands.ps1", 10*time.Second)
+	out, err := runPowerShell(10*time.Second, "test-commands.ps1", pipeName)
 
 	if err != nil {
-		t.Fatalf("cmd.Run() failed with %s\n", err)
+		t.Fatalf("test-commands.ps1 failed with %s\n", err)
 	}
 	t.Logf("combined out:\n%s\n", out)
 }
 
-func runPowerShell(script string, timeout time.Duration) (out string, err error) {
+func TestEventLoop(t *testing.T) {
+	pipeName := "222"
+	pc, _ := newPipeImpl(pipeName)
+	defer pc.close()
+
+	go func() {
+		for i := 0; i < 10000; i++ {
+			pc.emitEvent(fmt.Sprintf("event %d", i))
+			time.Sleep(time.Millisecond * 10)
+		}
+	}()
+
+	out, err := runPowerShell(10*time.Second, "test-events.ps1", pipeName)
+
+	if err != nil {
+		t.Fatalf("test-events.ps1 failed with %s\n", err)
+	}
+	t.Logf("combined out:\n%s\n", out)
+}
+
+func runPowerShell(timeout time.Duration, script string, args ...string) (out string, err error) {
 	// current tests directory
 	_, filename, _, _ := runtime.Caller(0)
 	psPath := filepath.Join(filepath.Dir(filename), "tests", script)
@@ -42,7 +64,8 @@ func runPowerShell(script string, timeout time.Duration) (out string, err error)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel() // The cancel should be deferred so resources are cleaned up
 
-	cmd := exec.CommandContext(ctx, "powershell.exe", psPath)
+	combinedArgs := append([]string{psPath}, args...)
+	cmd := exec.CommandContext(ctx, "powershell.exe", combinedArgs...)
 	outBytes, err := cmd.CombinedOutput()
 
 	if ctx.Err() == context.DeadlineExceeded {

@@ -22,7 +22,9 @@ type pipeImpl struct {
 	conn            net.Conn
 	id              string
 	commandPipeName string
+	commandListener *npipe.PipeListener
 	eventPipeName   string
+	eventListener   *npipe.PipeListener
 	commands        chan string
 	events          chan string
 	done            chan bool
@@ -48,18 +50,17 @@ func newPipeImpl(id string) (*pipeImpl, error) {
 func (pc *pipeImpl) commandLoop() {
 	log.Println("Starting command loop - ", pc.commandPipeName)
 
-	ln, err := npipe.Listen(`\\.\pipe\` + pc.commandPipeName)
+	var err error
+	pc.commandListener, err = npipe.Listen(`\\.\pipe\` + pc.commandPipeName)
 	if err != nil {
 		// handle error
 	}
 
-	defer ln.Close()
-
 	for {
-		pc.conn, err = ln.Accept()
+		pc.conn, err = pc.commandListener.Accept()
 		if err != nil {
-			log.Println("Connection error:", err)
-			continue
+			log.Println("Command listener connection error:", err)
+			return
 		}
 
 		log.Println("Connected to command pipe...")
@@ -143,18 +144,17 @@ func (pc *pipeImpl) eventLoop() {
 
 	log.Println("Starting event loop - ", pc.eventPipeName)
 
-	ln, err := npipe.Listen(`\\.\pipe\` + pc.eventPipeName)
+	var err error
+	pc.eventListener, err = npipe.Listen(`\\.\pipe\` + pc.eventPipeName)
 	if err != nil {
 		// handle error
 	}
 
-	defer ln.Close()
-
 	for {
-		conn, err := ln.Accept()
+		conn, err := pc.eventListener.Accept()
 		if err != nil {
-			log.Println("Connection error:", err)
-			continue
+			log.Println("Event listener connection error:", err)
+			return
 		}
 
 		log.Println("Connected to event pipe...")
@@ -204,5 +204,6 @@ func (pc *pipeImpl) eventLoop() {
 func (pc *pipeImpl) close() {
 	log.Println("Closing pipe client...")
 
-	//pc.hostClient.unregisterPipeClient(pc)
+	pc.commandListener.Close()
+	pc.eventListener.Close()
 }

@@ -1,9 +1,10 @@
+$pipeName=$args[0]
 $pipe = $null
 $pipeReader = $null
 $pipeWriter = $null
 
 try {
-    $pipe = new-object System.IO.Pipes.NamedPipeClientStream("pglet_pipe_111")
+    $pipe = new-object System.IO.Pipes.NamedPipeClientStream("pglet_pipe_$pipeName")
     $pipe.Connect()
 
     $pipeReader = new-object System.IO.StreamReader($pipe)
