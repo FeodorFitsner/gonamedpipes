@@ -10,7 +10,7 @@ try {
     $pipeWriter = new-object System.IO.StreamWriter($pipe)
     $pipeWriter.AutoFlush = $true
 
-    for ($i = 0; $i -le 1000; $i++) {
+    for ($i = 0; $i -le 10; $i++) {
         $pipeWriter.WriteLine("cmd $i`nline 2")
         $pipeWriter.Flush()
 
@@ -23,7 +23,7 @@ try {
     $pipeWriter.WriteLine("Boom!`nZoom!")
     $pipeWriter.Flush()
 
-    Start-Sleep -s 3
+    Start-Sleep -s 2
 
     $result = $pipeReader.ReadLine()
     Write-Host $result
@@ -36,13 +36,12 @@ try {
     $result = $pipeReader.ReadLine()
     Write-Host $result
 
-    Start-Sleep -s 5
+    Start-Sleep -s 2
 
     Write-Host "End!"
 
 } finally {
     $pipeReader.Dispose()
-    #$pipeWriter.Dispose()
     $pipe.Dispose()
 }
 
